@@ -1,8 +1,6 @@
 # Fissure — Development Progress
 
-## Status: Pre-implementation
-
-Design and architecture complete. CLAUDE.md written. No code exists yet.
+## Status: Phase 1 complete — ingest pipeline implemented and tested
 
 ---
 
@@ -20,11 +18,13 @@ Design and architecture complete. CLAUDE.md written. No code exists yet.
 ## Up next
 
 ### Phase 1 — Ingest
-- [ ] `config/settings.py` — EPSS floor, CWE allowlist, NVD lookback, model config
-- [ ] NVD API wrapper (`agents/triage/tools/nvd.py`)
-- [ ] Pre-filter logic (rule-based, no LLM)
-- [ ] GitHub Issues writer (`scripts/issues.py`) — create issue, apply labels
-- [ ] `cve-ingest.yml` workflow — wires the above end-to-end
+- [x] `config/settings.py` — EPSS floor, CWE allowlist, NVD lookback, model config
+- [x] NVD API wrapper (`agents/triage/tools/nvd.py`)
+- [x] Pre-filter logic (`agents/triage/prefilter.py`, rule-based, no LLM)
+- [x] Ingest entrypoint (`scripts/ingest.py`) — NVD → EPSS → pre-filter → issues glue
+- [x] GitHub Issues writer (`scripts/issues.py`) — `create_candidate_issue()` only
+- [x] `cve-ingest.yml` workflow — wires the above end-to-end
+- [x] Unit tests: pre-filter (27 tests, pure function) + NVD wrapper (8 tests, httpx mocked); 35/35 passing
 
 ### Phase 2 — Handoff schema
 - [ ] Pydantic model for handoff YAML (`schemas/handoff.py`)
