@@ -7,7 +7,7 @@ Adjust thresholds after the first batch of real runs.
 
 # Minimum EPSS score to survive the pre-filter. Start conservative; calibrate downward
 # once real data accumulates.
-EPSS_FLOOR: float = 0.1
+EPSS_FLOOR: float = 0.01
 
 # CWE IDs in scope for fuzzing-based reproduction. Only memory-corruption classes that
 # map cleanly to ASAN/fuzzer detection.
