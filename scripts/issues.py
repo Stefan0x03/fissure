@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from agents.triage.tools.ghsa import GHSAAdvisory
 from config.settings import LABEL_CANDIDATE
 
 _GITHUB_API = "https://api.github.com"
@@ -62,6 +63,7 @@ def create_candidate_issue(
     *,
     repo: str,
     token: str | None = None,
+    ghsa: GHSAAdvisory | None = None,
 ) -> dict[str, Any]:
     """
     Create a GitHub Issue for a CVE that has passed the pre-filter.
@@ -83,7 +85,7 @@ def create_candidate_issue(
     cve_data = cve.get("cve", cve)  # tolerate both raw vuln wrapper and bare cve dict
     cve_id: str = cve_data.get("id", "UNKNOWN")
     title = f"[Candidate] {cve_id}"
-    body = _build_issue_body(cve_data, cve_id, epss_score, epss_percentile)
+    body = _build_issue_body(cve_data, cve_id, epss_score, epss_percentile, ghsa)
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -116,6 +118,7 @@ def _build_issue_body(
     cve_id: str,
     epss_score: float | None,
     epss_percentile: float | None,
+    ghsa: GHSAAdvisory | None = None,
 ) -> str:
     description = _get_english_description(cve_data)
     published = cve_data.get("published", "unknown")
@@ -133,6 +136,8 @@ def _build_issue_body(
     refs_section = (
         "\n".join(f"- {url}" for url in refs[:10]) if refs else "_none_"
     )
+
+    ghsa_section = _build_ghsa_section(ghsa) if ghsa else "_No GHSA advisory found._"
 
     return f"""\
 ## {cve_id}
@@ -152,7 +157,68 @@ def _build_issue_body(
 
 ---
 
+## GHSA Advisory
+
+{ghsa_section}
+
+---
+
 _Awaiting triage._
+"""
+
+
+def _build_ghsa_section(ghsa: GHSAAdvisory) -> str:
+    cvss_line = (
+        f"{ghsa.cvss_score} ({ghsa.cvss_vector})"
+        if ghsa.cvss_score is not None
+        else "n/a"
+    )
+    cwes_line = (
+        ", ".join(f"{c['cweId']} ({c['name']})" for c in ghsa.cwes)
+        if ghsa.cwes else "none"
+    )
+    refs_lines = "\n".join(f"- {url}" for url in ghsa.references[:15]) or "_none_"
+
+    affected_lines = ""
+    if ghsa.vulnerabilities:
+        rows = []
+        for v in ghsa.vulnerabilities:
+            patched = v["first_patched"] or "no fix"
+            rows.append(
+                f"| {v['ecosystem']} | {v['package']} "
+                f"| {v['vulnerable_range']} | {patched} |"
+            )
+        affected_lines = (
+            "| Ecosystem | Package | Vulnerable range | First patched |\n"
+            "|-----------|---------|-----------------|---------------|\n"
+            + "\n".join(rows)
+        )
+    else:
+        affected_lines = "_No affected package data._"
+
+    return f"""\
+**GHSA ID:** {ghsa.ghsa_id}
+**Severity:** {ghsa.severity}
+**CVSS:** {cvss_line}
+**CWE:** {cwes_line}
+**Published:** {ghsa.published_at}
+**Updated:** {ghsa.updated_at}
+
+### Summary
+
+{ghsa.summary}
+
+### Advisory Detail
+
+{ghsa.description}
+
+### Affected Packages
+
+{affected_lines}
+
+### Advisory References
+
+{refs_lines}\
 """
 
 

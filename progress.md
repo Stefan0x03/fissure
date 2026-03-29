@@ -1,6 +1,6 @@
 # Fissure — Development Progress
 
-## Status: Phase 1 complete — ingest pipeline implemented and tested
+## Status: Phase 1 complete
 
 ---
 
@@ -25,6 +25,8 @@
 - [x] GitHub Issues writer (`scripts/issues.py`) — `create_candidate_issue()` only
 - [x] `cve-ingest.yml` workflow — wires the above end-to-end
 - [x] Unit tests: pre-filter (27 tests, pure function) + NVD wrapper (8 tests, httpx mocked); 35/35 passing
+- [x] GHSA fetcher via GitHub GraphQL (`agents/triage/tools/ghsa.py`)
+- [x] Wire GHSA fetch into `scripts/ingest.py` — called for all pre-filter survivors, result stored in issue body
 
 ### Phase 2 — Handoff schema
 - [ ] Pydantic model for handoff YAML (`schemas/handoff.py`)
@@ -32,8 +34,6 @@
 - [ ] Confirm each handoff runs cleanly with `lacuna scan`
 
 ### Phase 3 — Triage agent
-- [ ] EPSS API tool (`agents/triage/tools/epss.py`)
-- [ ] GHSA fetcher via GitHub GraphQL (`agents/triage/tools/ghsa.py`)
 - [ ] PoC search tool — GitHub code search + Exploit-DB (`agents/triage/tools/poc_search.py`)
 - [ ] ADK triage agent (`agents/triage/agent.py`)
 - [ ] `cve-triage.yml` workflow

@@ -23,6 +23,7 @@ from typing import Any
 import httpx
 
 from agents.triage.prefilter import passes_prefilter
+from agents.triage.tools.ghsa import fetch_ghsa_for_cve
 from agents.triage.tools.nvd import fetch_cves_by_date_range
 from config.settings import EPSS_BASE_URL, NVD_LOOKBACK_DAYS
 from scripts.issues import create_candidate_issue, issue_exists
@@ -79,11 +80,18 @@ def main(repo: str, dry_run: bool = False) -> None:
                 discarded += 1
                 continue
 
+            ghsa = fetch_ghsa_for_cve(cve_id)
+            if ghsa:
+                log.info("  GHSA %s found for %s", ghsa.ghsa_id, cve_id)
+            else:
+                log.info("  No GHSA advisory for %s", cve_id)
+
             issue = create_candidate_issue(
                 vuln,
                 epss_score=epss_score,
                 epss_percentile=epss_percentile,
                 repo=repo,
+                ghsa=ghsa,
             )
             log.info("  Created issue #%d: %s", issue["number"], issue["html_url"])
         except httpx.HTTPStatusError as exc:
