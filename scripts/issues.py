@@ -16,6 +16,45 @@ from config.settings import LABEL_CANDIDATE
 _GITHUB_API = "https://api.github.com"
 
 
+def issue_exists(
+    cve_id: str,
+    *,
+    repo: str,
+    token: str | None = None,
+) -> bool:
+    """
+    Return True if an issue for *cve_id* already exists in *repo* (any state).
+
+    Searches issue titles via the GitHub search API so it catches open,
+    closed, and discarded issues — preventing re-ingestion of any CVE that
+    has already been seen.
+    """
+    token = token or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise ValueError(
+            "GitHub token required: pass token= or set GITHUB_TOKEN env var"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    params = {
+        "q": f"repo:{repo} {cve_id} in:title is:issue",
+        "per_page": 1,
+    }
+
+    with httpx.Client(timeout=15.0) as client:
+        response = client.get(
+            f"{_GITHUB_API}/search/issues",
+            params=params,
+            headers=headers,
+        )
+        response.raise_for_status()
+        return response.json().get("total_count", 0) > 0
+
+
 def create_candidate_issue(
     cve: dict[str, Any],
     epss_score: float | None,

@@ -25,7 +25,7 @@ import httpx
 from agents.triage.prefilter import passes_prefilter
 from agents.triage.tools.nvd import fetch_cves_by_date_range
 from config.settings import EPSS_BASE_URL, NVD_LOOKBACK_DAYS
-from scripts.issues import create_candidate_issue
+from scripts.issues import create_candidate_issue, issue_exists
 
 logging.basicConfig(
     level=logging.INFO,
@@ -73,6 +73,12 @@ def main(repo: str, dry_run: bool = False) -> None:
             continue
 
         try:
+            if issue_exists(cve_id, repo=repo):
+                log.info("  SKIP %s — issue already exists", cve_id)
+                passed -= 1
+                discarded += 1
+                continue
+
             issue = create_candidate_issue(
                 vuln,
                 epss_score=epss_score,
