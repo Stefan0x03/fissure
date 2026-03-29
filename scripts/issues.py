@@ -85,7 +85,7 @@ def _build_issue_body(
     refs = _get_reference_urls(cve_data)
 
     epss_line = (
-        f"{epss_score:.4f} (p{epss_percentile:.1f})"
+        f"{epss_score:.4f} ({epss_percentile * 100:.1f}th percentile)"
         if epss_score is not None and epss_percentile is not None
         else "pending"
     )

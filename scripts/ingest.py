@@ -114,7 +114,7 @@ def _fetch_epss_bulk(
                 for entry in data.get("data", []):
                     cve_id = entry.get("cve", "")
                     score = float(entry.get("epss", 0.0))
-                    percentile = float(entry.get("percentile", 0.0)) * 100.0
+                    percentile = float(entry.get("percentile", 0.0))
                     results[cve_id] = (score, percentile)
             except (httpx.HTTPError, ValueError, KeyError) as exc:
                 log.warning("EPSS bulk fetch failed for chunk starting %s: %s", chunk[0], exc)

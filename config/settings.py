@@ -41,7 +41,7 @@ NVD_API_KEY_ENV: str = "NVD_API_KEY"
 
 # --- EPSS API ---
 
-EPSS_BASE_URL: str = "https://api.first.org/data/1.0/epss"
+EPSS_BASE_URL: str = "https://api.first.org/data/v1/epss"
 
 # --- GitHub ---
 
