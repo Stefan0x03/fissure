@@ -15,6 +15,7 @@ EPSS_PERCENTILE_FLOOR: float = 0.10
 CWE_ALLOWLIST: set[str] = {
     "CWE-122",  # Heap-based buffer overflow
     "CWE-125",  # Out-of-bounds read
+    "CWE-190",  # Integer overflow (often leads to heap corruption)
     "CWE-416",  # Use-after-free
     "CWE-787",  # Out-of-bounds write
 }

@@ -29,8 +29,8 @@
 - [x] Wire GHSA fetch into `scripts/ingest.py` — called for all pre-filter survivors, result stored in issue body
 
 ### Phase 2 — Handoff schema
-- [ ] Pydantic model for handoff YAML (`schemas/handoff.py`)
-- [ ] Manual validation: author handoff YAMLs for libwebp CVE-2023-4863, one libarchive CVE, one libtiff CVE
+- [x] Pydantic model for handoff YAML (`schemas/handoff.py`)
+- [x] Manual validation: author handoff YAMLs for libwebp CVE-2023-4863, one libarchive CVE, one libtiff CVE
 - [ ] Confirm each handoff runs cleanly with `lacuna scan`
 
 ### Phase 3 — Triage agent
