@@ -1,62 +1,24 @@
 """
 GHSA fetcher — retrieves a full GitHub Security Advisory by CVE ID.
 
-Uses the GitHub GraphQL API. Requires GITHUB_TOKEN (read:security_events
-scope; the default Actions token is sufficient for public advisories).
+Uses the GitHub REST API (/advisories?cve_id=) which covers both reviewed
+and unreviewed advisories. The GraphQL securityAdvisories endpoint only
+returns reviewed advisories and misses the majority of the corpus.
 
+Requires GITHUB_TOKEN. The default Actions token is sufficient.
 Returns None when no advisory is found for a given CVE ID.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
 
-_GRAPHQL_URL = "https://api.github.com/graphql"
+_REST_URL = "https://api.github.com/advisories"
 _GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
-
-_QUERY = """
-query FetchAdvisoryByCVE($cveId: String!) {
-  securityAdvisories(identifier: {type: CVE, value: $cveId}, first: 1) {
-    nodes {
-      ghsaId
-      summary
-      description
-      severity
-      publishedAt
-      updatedAt
-      cvss {
-        score
-        vectorString
-      }
-      cwes(first: 10) {
-        nodes {
-          cweId
-          name
-        }
-      }
-      references {
-        url
-      }
-      vulnerabilities(first: 20) {
-        nodes {
-          package {
-            name
-            ecosystem
-          }
-          vulnerableVersionRange
-          firstPatchedVersion {
-            identifier
-          }
-        }
-      }
-    }
-  }
-}
-"""
 
 
 @dataclass
@@ -64,14 +26,15 @@ class GHSAAdvisory:
     ghsa_id: str
     summary: str
     description: str
-    severity: str                        # CRITICAL / HIGH / MODERATE / LOW
+    severity: str                          # critical / high / moderate / low
+    advisory_type: str                     # "reviewed" or "unreviewed"
     published_at: str
     updated_at: str
     cvss_score: float | None
     cvss_vector: str | None
-    cwes: list[dict[str, str]]           # [{"cweId": "CWE-787", "name": "..."}]
-    references: list[str]                # plain URL strings
-    vulnerabilities: list[dict[str, Any]]  # affected package records
+    cwes: list[dict[str, str]]             # [{"cwe_id": "CWE-787", "name": "..."}]
+    references: list[str]                  # plain URL strings
+    vulnerabilities: list[dict[str, Any]]  # affected package records (reviewed only)
 
 
 def fetch_ghsa_for_cve(
@@ -81,11 +44,10 @@ def fetch_ghsa_for_cve(
     timeout: float = 20.0,
 ) -> GHSAAdvisory | None:
     """
-    Fetch the GitHub Security Advisory for *cve_id*.
+    Fetch the GitHub Security Advisory for *cve_id* via the REST API.
 
     Returns a :class:`GHSAAdvisory` if an advisory exists, ``None`` otherwise.
     Raises ``httpx.HTTPStatusError`` on non-2xx HTTP responses.
-    Raises ``ValueError`` if the GraphQL response contains errors.
     """
     token = token or os.environ.get(_GITHUB_TOKEN_ENV)
     if not token:
@@ -95,48 +57,47 @@ def fetch_ghsa_for_cve(
 
     headers = {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
     }
-    payload = {"query": _QUERY, "variables": {"cveId": cve_id}}
 
     with httpx.Client(timeout=timeout) as client:
-        response = client.post(_GRAPHQL_URL, json=payload, headers=headers)
+        response = client.get(
+            _REST_URL,
+            params={"cve_id": cve_id},
+            headers=headers,
+        )
         response.raise_for_status()
 
-    data = response.json()
-    if errors := data.get("errors"):
-        raise ValueError(f"GraphQL errors for {cve_id}: {errors}")
-
-    nodes = data.get("data", {}).get("securityAdvisories", {}).get("nodes", [])
-    if not nodes:
+    advisories = response.json()
+    if not advisories:
         return None
 
-    node = nodes[0]
+    a = advisories[0]
+    cvss = a.get("cvss") or {}
+
     return GHSAAdvisory(
-        ghsa_id=node["ghsaId"],
-        summary=node.get("summary", ""),
-        description=node.get("description", ""),
-        severity=node.get("severity", "UNKNOWN"),
-        published_at=node.get("publishedAt", ""),
-        updated_at=node.get("updatedAt", ""),
-        cvss_score=node.get("cvss", {}).get("score"),
-        cvss_vector=node.get("cvss", {}).get("vectorString"),
+        ghsa_id=a.get("ghsa_id", ""),
+        summary=a.get("summary", ""),
+        description=a.get("description", ""),
+        severity=a.get("severity", "unknown"),
+        advisory_type=a.get("type", "unknown"),
+        published_at=a.get("published_at", ""),
+        updated_at=a.get("updated_at", ""),
+        cvss_score=cvss.get("score"),
+        cvss_vector=cvss.get("vector_string"),
         cwes=[
-            {"cweId": c["cweId"], "name": c["name"]}
-            for c in node.get("cwes", {}).get("nodes", [])
+            {"cwe_id": c["cwe_id"], "name": c["name"]}
+            for c in a.get("cwes") or []
         ],
-        references=[r["url"] for r in node.get("references", []) if r.get("url")],
+        references=a.get("references") or [],
         vulnerabilities=[
             {
                 "package": v.get("package", {}).get("name", ""),
                 "ecosystem": v.get("package", {}).get("ecosystem", ""),
-                "vulnerable_range": v.get("vulnerableVersionRange", ""),
-                "first_patched": (
-                    v.get("firstPatchedVersion", {}).get("identifier", "")
-                    if v.get("firstPatchedVersion")
-                    else None
-                ),
+                "vulnerable_range": v.get("vulnerable_version_range", ""),
+                "first_patched": v.get("first_patched_version"),
             }
-            for v in node.get("vulnerabilities", {}).get("nodes", [])
+            for v in a.get("vulnerabilities") or []
         ],
     )

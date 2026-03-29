@@ -174,7 +174,7 @@ def _build_ghsa_section(ghsa: GHSAAdvisory) -> str:
         else "n/a"
     )
     cwes_line = (
-        ", ".join(f"{c['cweId']} ({c['name']})" for c in ghsa.cwes)
+        ", ".join(f"{c['cwe_id']} ({c['name']})" for c in ghsa.cwes)
         if ghsa.cwes else "none"
     )
     refs_lines = "\n".join(f"- {url}" for url in ghsa.references[:15]) or "_none_"
