@@ -48,7 +48,8 @@ Runs on a schedule. Responsibilities:
    - CWE must be in scope: CWE-122, CWE-125, CWE-416, CWE-787
    - EPSS score must meet the configured floor (`config/settings.py`)
    - Target must be a userspace library or binary (exclude web apps, firmware, kernel, enterprise software)
-3. Create a GitHub Issue per surviving CVE with the `candidate` label
+3. For each pre-filter survivor, fetch linked GitHub Security Advisory (GHSA) via GitHub GraphQL — stored in the issue body as raw data for the triage agent to reason over
+4. Create a GitHub Issue per surviving CVE with the `candidate` label
 
 No LLM calls in this workflow. Cost: free.
 
@@ -98,11 +99,10 @@ Label set: `candidate`, `needs-review`, `approved`, `discarded`, `in-progress`, 
 Single ADK agent using Haiku via litellm. Not a multi-agent pipeline — the reasoning chain (fetch → enrich → synthesize) is linear enough for one agent with tools.
 
 **Tools the agent has access to:**
-- NVD API wrapper — fetch full CVE record
-- EPSS API wrapper (`api.first.org/data/1.0/epss`) — fetch score and percentile by CVE ID
-- GHSA fetcher — retrieve linked GitHub Security Advisories via GitHub GraphQL API
 - PoC search — GitHub code search and Exploit-DB lookup
 - GitHub Issues writer — update issue body and labels
+
+EPSS score and GHSA data are pre-fetched at ingest and provided to the agent as context in the issue body — the agent does not call these APIs directly.
 
 **Confidence signals the agent reasons over:**
 - EPSS score and percentile
