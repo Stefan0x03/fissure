@@ -59,13 +59,13 @@ def main(repo: str, dry_run: bool = False) -> None:
         cve_id: str = vuln.get("cve", {}).get("id", "UNKNOWN")
         epss_score, epss_percentile = epss_map.get(cve_id, (None, None))
 
-        ok, reason = passes_prefilter(vuln, epss_score=epss_score)
+        ok, reason = passes_prefilter(vuln, epss_percentile=epss_percentile)
         if not ok:
             log.debug("DISCARD %s — %s", cve_id, reason)
             discarded += 1
             continue
 
-        log.info("PASS %s (EPSS=%.4f)", cve_id, epss_score or 0.0)
+        log.info("PASS %s (EPSS=%.4f, percentile=%.1f%%)", cve_id, epss_score or 0.0, (epss_percentile or 0.0) * 100)
         passed += 1
 
         if dry_run:

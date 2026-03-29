@@ -8,11 +8,11 @@ import pytest
 
 from agents.triage.prefilter import (
     _check_cwe,
-    _check_epss,
+    _check_epss_percentile,
     _check_scope,
     passes_prefilter,
 )
-from config.settings import CWE_ALLOWLIST, EPSS_FLOOR
+from config.settings import CWE_ALLOWLIST, EPSS_PERCENTILE_FLOOR
 
 
 # ---------------------------------------------------------------------------
@@ -96,28 +96,28 @@ class TestCheckCWE:
 
 
 # ---------------------------------------------------------------------------
-# _check_epss
+# _check_epss_percentile
 # ---------------------------------------------------------------------------
 
 
-class TestCheckEPSS:
+class TestCheckEPSSPercentile:
     def test_above_floor_passes(self):
-        assert _check_epss(EPSS_FLOOR + 0.01) == ""
+        assert _check_epss_percentile(EPSS_PERCENTILE_FLOOR + 0.01) == ""
 
     def test_at_floor_passes(self):
-        assert _check_epss(EPSS_FLOOR) == ""
+        assert _check_epss_percentile(EPSS_PERCENTILE_FLOOR) == ""
 
     def test_below_floor_fails(self):
-        reason = _check_epss(EPSS_FLOOR - 0.001)
+        reason = _check_epss_percentile(EPSS_PERCENTILE_FLOOR - 0.001)
         assert reason != ""
         assert "EPSS" in reason
 
     def test_zero_fails(self):
-        reason = _check_epss(0.0)
+        reason = _check_epss_percentile(0.0)
         assert reason != ""
 
     def test_one_passes(self):
-        assert _check_epss(1.0) == ""
+        assert _check_epss_percentile(1.0) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -204,18 +204,18 @@ class TestPassesPrefilter:
         )
 
     def test_passes_all_checks(self):
-        ok, reason = passes_prefilter(self._good_vuln(), epss_score=0.5)
+        ok, reason = passes_prefilter(self._good_vuln(), epss_percentile=0.5)
         assert ok is True
         assert reason == ""
 
     def test_fails_cwe(self):
         vuln = make_vuln(cwes=["CWE-79"], description="XSS in libfoo.")
-        ok, reason = passes_prefilter(vuln, epss_score=0.5)
+        ok, reason = passes_prefilter(vuln, epss_percentile=0.5)
         assert ok is False
         assert "CWE" in reason
 
-    def test_fails_epss(self):
-        ok, reason = passes_prefilter(self._good_vuln(), epss_score=0.0)
+    def test_fails_epss_percentile(self):
+        ok, reason = passes_prefilter(self._good_vuln(), epss_percentile=0.0)
         assert ok is False
         assert "EPSS" in reason
 
@@ -224,20 +224,20 @@ class TestPassesPrefilter:
             cwes=["CWE-787"],
             cpe_strings=["cpe:2.3:o:linux:linux_kernel:6.5:*:*:*:*:*:*:*"],
         )
-        ok, reason = passes_prefilter(vuln, epss_score=0.5)
+        ok, reason = passes_prefilter(vuln, epss_percentile=0.5)
         assert ok is False
 
     def test_epss_none_skips_epss_check(self):
-        """When epss_score is None the EPSS check is skipped entirely."""
-        ok, reason = passes_prefilter(self._good_vuln(), epss_score=None)
+        """When epss_percentile is None the EPSS check is skipped entirely."""
+        ok, reason = passes_prefilter(self._good_vuln(), epss_percentile=None)
         assert ok is True
         assert reason == ""
 
     def test_epss_at_floor_passes(self):
-        ok, reason = passes_prefilter(self._good_vuln(), epss_score=EPSS_FLOOR)
+        ok, reason = passes_prefilter(self._good_vuln(), epss_percentile=EPSS_PERCENTILE_FLOOR)
         assert ok is True
 
     def test_epss_just_below_floor_fails(self):
-        ok, reason = passes_prefilter(self._good_vuln(), epss_score=EPSS_FLOOR - 0.001)
+        ok, reason = passes_prefilter(self._good_vuln(), epss_percentile=EPSS_PERCENTILE_FLOOR - 0.001)
         assert ok is False
         assert "EPSS" in reason

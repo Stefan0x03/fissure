@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from config.settings import CWE_ALLOWLIST, EPSS_FLOOR
+from config.settings import CWE_ALLOWLIST, EPSS_PERCENTILE_FLOOR
 
 # ---------------------------------------------------------------------------
 # Out-of-scope keyword lists — matched against description and CPE strings.
@@ -104,15 +104,15 @@ _OUT_OF_SCOPE_VENDOR_TOKENS: frozenset[str] = frozenset(
 
 def passes_prefilter(
     vuln: dict[str, Any],
-    epss_score: float | None = None,
+    epss_percentile: float | None = None,
 ) -> tuple[bool, str]:
     """
     Decide whether *vuln* (a raw NVD ``vulnerabilities`` list item) survives the
     pre-filter.
 
-    ``epss_score`` is passed in separately because the NVD record does not carry
+    ``epss_percentile`` is passed in separately because the NVD record does not carry
     EPSS data — the caller fetches it from api.first.org.  When ``None``, the
-    EPSS check is skipped (useful for unit testing individual checks).
+    EPSS check is skipped so that unscored CVEs are not silently dropped.
 
     Returns ``(True, "")`` if the CVE passes; ``(False, reason)`` otherwise.
     """
@@ -123,9 +123,9 @@ def passes_prefilter(
     if cwe_fail:
         return False, cwe_fail
 
-    # 2. EPSS floor check (only when a score was provided)
-    if epss_score is not None:
-        epss_fail = _check_epss(epss_score)
+    # 2. EPSS percentile floor (only when a percentile was provided)
+    if epss_percentile is not None:
+        epss_fail = _check_epss_percentile(epss_percentile)
         if epss_fail:
             return False, epss_fail
 
@@ -160,10 +160,10 @@ def _check_cwe(cve: dict[str, Any]) -> str:
     return ""
 
 
-def _check_epss(score: float) -> str:
-    """Return a discard reason if EPSS score is below the floor, else ''."""
-    if score < EPSS_FLOOR:
-        return f"EPSS score {score:.4f} below floor {EPSS_FLOOR}"
+def _check_epss_percentile(percentile: float) -> str:
+    """Return a discard reason if EPSS percentile is below the floor, else ''."""
+    if percentile < EPSS_PERCENTILE_FLOOR:
+        return f"EPSS percentile {percentile:.4f} below floor {EPSS_PERCENTILE_FLOOR}"
     return ""
 
 

@@ -5,9 +5,10 @@ Adjust thresholds after the first batch of real runs.
 
 # --- Ingest / pre-filter ---
 
-# Minimum EPSS score to survive the pre-filter. Start conservative; calibrate downward
-# once real data accumulates.
-EPSS_FLOOR: float = 0.01
+# Minimum EPSS percentile (0–1) to survive the pre-filter. Percentile is a stable
+# relative ranking — 0.10 always means "top 90% of all scored CVEs" regardless of how
+# the raw score distribution shifts. Calibrate after the first batch of labeled runs.
+EPSS_PERCENTILE_FLOOR: float = 0.10
 
 # CWE IDs in scope for fuzzing-based reproduction. Only memory-corruption classes that
 # map cleanly to ASAN/fuzzer detection.
