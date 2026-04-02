@@ -101,6 +101,7 @@ def main(repo: str, dry_run: bool = False) -> None:
             )
             log.info("  Created issue #%d: %s", issue["number"], issue["html_url"])
             existing_cve_ids.add(cve_id)  # guard against duplicates within this run
+            _dispatch_triage(issue["number"], repo)
         except httpx.HTTPStatusError as exc:
             log.error("  Failed to create issue for %s: %s", cve_id, exc)
 
@@ -149,6 +150,49 @@ def _fetch_existing_cve_ids(repo: str, *, timeout: float = 15.0) -> set[str]:
             page += 1
 
     return cve_ids
+
+
+def _dispatch_triage(issue_number: int, repo: str, *, timeout: float = 10.0) -> None:
+    """
+    Trigger cve-triage.yml via workflow_dispatch for *issue_number*.
+
+    Failures are logged but never re-raised — a failed dispatch does not abort
+    the ingest run; triage can be re-run manually via workflow_dispatch.
+    """
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        log.warning("Cannot dispatch triage for issue #%d: GITHUB_TOKEN not set", issue_number)
+        return
+
+    ref = os.environ.get("GITHUB_REF_NAME", "main")
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    payload = {
+        "ref": ref,
+        "inputs": {"issue_number": str(issue_number)},
+    }
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            resp = client.post(
+                f"https://api.github.com/repos/{repo}/actions/workflows/cve-triage.yml/dispatches",
+                json=payload,
+                headers=headers,
+            )
+            resp.raise_for_status()
+        log.info("  Dispatched triage workflow for issue #%d", issue_number)
+    except httpx.HTTPStatusError as exc:
+        log.error(
+            "  Failed to dispatch triage for issue #%d: %s %s",
+            issue_number,
+            exc.response.status_code,
+            exc.response.text,
+        )
+    except httpx.HTTPError as exc:
+        log.error("  Network error dispatching triage for issue #%d: %s", issue_number, exc)
 
 
 def _fetch_epss_bulk(
