@@ -40,13 +40,18 @@ def _search_github(cve_id: str, token: str) -> list[dict[str, Any]]:
         "per_page": _MAX_GITHUB_RESULTS,
     }
 
-    with httpx.Client(timeout=20.0) as client:
-        response = client.get(
-            f"{_GITHUB_API}/search/code",
-            params=params,
-            headers=headers,
-        )
-        response.raise_for_status()
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            response = client.get(
+                f"{_GITHUB_API}/search/code",
+                params=params,
+                headers=headers,
+            )
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        # Rate-limited or other non-fatal HTTP error — return empty rather than
+        # crashing the triage run. The agent will proceed without PoC results.
+        return []
 
     items = response.json().get("items", [])
     return [
