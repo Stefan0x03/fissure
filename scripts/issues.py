@@ -1,7 +1,5 @@
 """
-GitHub Issues glue — Phase 1 scope: candidate issue creation only.
-
-Update/close/relabeling methods are Phase 3.
+GitHub Issues glue — candidate issue creation, triage comment posting, and issue reads.
 """
 
 from __future__ import annotations
@@ -16,44 +14,6 @@ from config.settings import LABEL_CANDIDATE
 
 _GITHUB_API = "https://api.github.com"
 
-
-def issue_exists(
-    cve_id: str,
-    *,
-    repo: str,
-    token: str | None = None,
-) -> bool:
-    """
-    Return True if an issue for *cve_id* already exists in *repo* (any state).
-
-    Searches issue titles via the GitHub search API so it catches open,
-    closed, and discarded issues — preventing re-ingestion of any CVE that
-    has already been seen.
-    """
-    token = token or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        raise ValueError(
-            "GitHub token required: pass token= or set GITHUB_TOKEN env var"
-        )
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-    params = {
-        "q": f"repo:{repo} {cve_id} in:title is:issue",
-        "per_page": 1,
-    }
-
-    with httpx.Client(timeout=15.0) as client:
-        response = client.get(
-            f"{_GITHUB_API}/search/issues",
-            params=params,
-            headers=headers,
-        )
-        response.raise_for_status()
-        return response.json().get("total_count", 0) > 0
 
 
 def create_candidate_issue(
@@ -250,3 +210,96 @@ def _get_cvss_score(cve_data: dict[str, Any]) -> float | None:
 
 def _get_reference_urls(cve_data: dict[str, Any]) -> list[str]:
     return [ref.get("url", "") for ref in cve_data.get("references", []) if ref.get("url")]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 additions — triage comment and issue body read
+# ---------------------------------------------------------------------------
+
+
+def get_issue_body(issue_number: int, repo: str, *, token: str | None = None) -> str:
+    """
+    Fetch the body text of a GitHub Issue.
+
+    ``repo`` must be in ``owner/name`` format.
+    ``token`` defaults to the ``GITHUB_TOKEN`` environment variable.
+
+    Returns the issue body string (may be empty if the issue has no body).
+    Raises ``httpx.HTTPStatusError`` on non-2xx responses.
+    """
+    token = token or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise ValueError(
+            "GitHub token required: pass token= or set GITHUB_TOKEN env var"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    with httpx.Client(timeout=15.0) as client:
+        response = client.get(
+            f"{_GITHUB_API}/repos/{repo}/issues/{issue_number}",
+            headers=headers,
+        )
+        response.raise_for_status()
+
+    return response.json().get("body") or ""
+
+
+def post_triage_comment(
+    issue_number: int,
+    repo: str,
+    body: str,
+    label: str,
+    *,
+    close: bool = False,
+    token: str | None = None,
+) -> None:
+    """
+    Post *body* as a comment on *issue_number*, apply *label*, and optionally close the issue.
+
+    Never edits the issue body — all triage output goes into comments.
+
+    ``repo`` must be in ``owner/name`` format.
+    ``token`` defaults to the ``GITHUB_TOKEN`` environment variable.
+
+    Raises ``httpx.HTTPStatusError`` on non-2xx responses.
+    """
+    token = token or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise ValueError(
+            "GitHub token required: pass token= or set GITHUB_TOKEN env var"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    issue_url = f"{_GITHUB_API}/repos/{repo}/issues/{issue_number}"
+
+    with httpx.Client(timeout=15.0) as client:
+        # 1. Post the comment.
+        client.post(
+            f"{issue_url}/comments",
+            json={"body": body},
+            headers=headers,
+        ).raise_for_status()
+
+        # 2. Apply the label.
+        client.post(
+            f"{issue_url}/labels",
+            json={"labels": [label]},
+            headers=headers,
+        ).raise_for_status()
+
+        # 3. Close the issue if requested.
+        if close:
+            client.patch(
+                issue_url,
+                json={"state": "closed"},
+                headers=headers,
+            ).raise_for_status()

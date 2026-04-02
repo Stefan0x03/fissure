@@ -26,7 +26,7 @@ from agents.triage.prefilter import passes_prefilter
 from agents.triage.tools.ghsa import fetch_ghsa_for_cve
 from agents.triage.tools.nvd import fetch_cves_by_date_range
 from config.settings import EPSS_BASE_URL, NVD_LOOKBACK_DAYS
-from scripts.issues import create_candidate_issue, issue_exists
+from scripts.issues import create_candidate_issue
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,6 +53,12 @@ def main(repo: str, dry_run: bool = False) -> None:
     cve_ids = [v.get("cve", {}).get("id", "") for v in vulns if v.get("cve", {}).get("id")]
     epss_map = _fetch_epss_bulk(cve_ids)
 
+    # Prefetch all existing issue titles once so deduplication doesn't rely on
+    # the GitHub Search API, which has an indexing lag of several minutes and
+    # causes false negatives (and therefore duplicate issues) within the same run.
+    existing_cve_ids = _fetch_existing_cve_ids(repo) if not dry_run else set()
+    log.info("Found %d existing issues in repo", len(existing_cve_ids))
+
     passed = 0
     discarded = 0
 
@@ -73,13 +79,13 @@ def main(repo: str, dry_run: bool = False) -> None:
             log.info("  [dry-run] would create issue for %s", cve_id)
             continue
 
-        try:
-            if issue_exists(cve_id, repo=repo):
-                log.info("  SKIP %s — issue already exists", cve_id)
-                passed -= 1
-                discarded += 1
-                continue
+        if cve_id in existing_cve_ids:
+            log.info("  SKIP %s — issue already exists", cve_id)
+            passed -= 1
+            discarded += 1
+            continue
 
+        try:
             ghsa = fetch_ghsa_for_cve(cve_id)
             if ghsa:
                 log.info("  GHSA %s found for %s", ghsa.ghsa_id, cve_id)
@@ -94,10 +100,55 @@ def main(repo: str, dry_run: bool = False) -> None:
                 ghsa=ghsa,
             )
             log.info("  Created issue #%d: %s", issue["number"], issue["html_url"])
+            existing_cve_ids.add(cve_id)  # guard against duplicates within this run
         except httpx.HTTPStatusError as exc:
             log.error("  Failed to create issue for %s: %s", cve_id, exc)
 
     log.info("Done. Passed: %d  Discarded: %d", passed, discarded)
+
+
+def _fetch_existing_cve_ids(repo: str, *, timeout: float = 15.0) -> set[str]:
+    """
+    Return the set of CVE IDs that already have an issue in *repo* (any state).
+
+    Paginates the Issues list API rather than the Search API so that issues
+    created moments ago are immediately visible (the Search API indexes with
+    a lag of several minutes).
+    """
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise ValueError("GITHUB_TOKEN env var is required")
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    cve_ids: set[str] = set()
+    page = 1
+    with httpx.Client(timeout=timeout) as client:
+        while True:
+            resp = client.get(
+                f"https://api.github.com/repos/{repo}/issues",
+                params={"state": "all", "per_page": 100, "page": page},
+                headers=headers,
+            )
+            resp.raise_for_status()
+            issues = resp.json()
+            if not issues:
+                break
+            for issue in issues:
+                title: str = issue.get("title", "")
+                # Titles are "[Candidate] CVE-YYYY-NNNNN" but match any format.
+                for word in title.split():
+                    if word.startswith("CVE-"):
+                        cve_ids.add(word)
+            if len(issues) < 100:
+                break
+            page += 1
+
+    return cve_ids
 
 
 def _fetch_epss_bulk(

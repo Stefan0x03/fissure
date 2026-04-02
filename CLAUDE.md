@@ -55,20 +55,20 @@ No LLM calls in this workflow. Cost: free.
 
 ### `cve-triage.yml` (per candidate issue)
 
-Triggered when a `candidate` issue is created (or on-demand). Runs the ADK triage agent against a single issue. Responsibilities:
+Triggered when the `candidate` label is applied to an issue (not on `opened` — the label may not be set yet at that point). Also supports `workflow_dispatch` with an `issue_number` input for manual re-triage. Runs the ADK triage agent against a single issue. Responsibilities:
 1. Fetch full EPSS score and percentile
 2. Fetch linked GitHub Security Advisory (GHSA) — often more detailed than NVD; may include patch diffs, affected version ranges, and vulnerable function names
 3. Search for public PoCs (GitHub code search, Exploit-DB)
 4. Reason over all gathered data and produce a confidence assessment
-5. Update the issue:
-   - **High confidence:** add `approved` label, embed handoff YAML in issue body
-   - **Medium confidence:** add `needs-review` label, embed partial handoff YAML
-   - **Low confidence:** close issue with discard rationale
+5. Post a triage comment on the issue (never edit the issue body — comments are the audit trail):
+   - **High confidence:** post comment with handoff YAML, add `approved` label
+   - **Medium confidence:** post comment with partial handoff YAML, add `needs-review` label
+   - **Low confidence:** post comment with discard rationale, add `discarded` label, close issue
 
 ### `lacuna-runner.yml` (on `approved` label)
 
 Triggered by the `approved` label being applied to an issue. Responsibilities:
-1. Extract the handoff YAML block from the issue body
+1. Find the triage comment on the issue by author (`github-actions[bot]`) and extract the first ` ```yaml ` fenced code block
 2. Write it to a temporary file
 3. Check out the Lacuna repository
 4. Run `lacuna scan <handoff.yaml>` as a shell step
@@ -98,11 +98,30 @@ Label set: `candidate`, `needs-review`, `approved`, `discarded`, `in-progress`, 
 
 Single ADK agent using Haiku via litellm. Not a multi-agent pipeline — the reasoning chain (fetch → enrich → synthesize) is linear enough for one agent with tools.
 
+**Initialization:**
+
+```python
+import os
+from google.adk.agents import Agent
+from google.adk.models.lite_llm import LiteLlm
+
+os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "FALSE"
+
+agent = Agent(
+    name="fissure_triage",
+    model=LiteLlm(model="anthropic/claude-3-haiku-20240307"),
+    instruction="...",
+    tools=[...],
+)
+```
+
+Runner invocation is async via `runner.run_async()`. Required env vars: `ANTHROPIC_API_KEY`, `GOOGLE_GENAI_USE_VERTEXAI=FALSE`.
+
 **Tools the agent has access to:**
 - PoC search — GitHub code search and Exploit-DB lookup
-- GitHub Issues writer — update issue body and labels
+- GitHub Issues writer — post triage comment and apply labels (never edits the issue body)
 
-EPSS score and GHSA data are pre-fetched at ingest and provided to the agent as context in the issue body — the agent does not call these APIs directly.
+EPSS score and GHSA data are pre-fetched at ingest and present in the issue body. The agent reads them from context — it does not call EPSS or GHSA APIs directly.
 
 **Confidence signals the agent reasons over:**
 - EPSS score and percentile
@@ -111,13 +130,13 @@ EPSS score and GHSA data are pre-fetched at ingest and provided to the agent as 
 - Target containerizability (can the affected version be built with ASAN or pulled as a known image?)
 - Advisory-to-harness alignment (does the vulnerability type fit fuzzing-based reproduction?)
 
-Confidence tier thresholds are tunable parameters in `config/settings.py`. Calibrate after the first batch of real runs.
+**Confidence tiers:** The agent self-reports `high`, `medium`, or `low` as a qualitative tier — it does not produce a numeric score. `CONFIDENCE_HIGH_THRESHOLD` and `CONFIDENCE_MEDIUM_THRESHOLD` in `config/settings.py` are reserved for future calibration once labeled data accumulates.
 
 ---
 
 ## Handoff YAML schema
 
-The triage agent's primary output is a Lacuna-compatible target YAML embedded in the issue body inside a fenced code block (` ```yaml `). This is the critical interface between triage and Lacuna.
+The triage agent's primary output is a Lacuna-compatible target YAML embedded in a triage comment inside a fenced code block (` ```yaml `). This is the critical interface between triage and Lacuna. The issue body is never modified after creation — all agent output goes into comments to preserve the audit trail.
 
 The schema extends Lacuna's existing target spec:
 
@@ -169,7 +188,7 @@ Tunable parameters:
 - **NVD:** `https://services.nvd.nist.gov/rest/json/cves/2.0` — no key required for low-volume polling; key available for higher rate limits
 - **EPSS:** `https://api.first.org/data/1.0/epss` — public, no key required
 - **GHSA:** GitHub GraphQL API (`https://api.github.com/graphql`) — requires `GITHUB_TOKEN`
-- **GitHub Issues / Labels:** GitHub REST API — uses `GITHUB_TOKEN` from Actions environment
+- **GitHub Issues / Labels / Comments:** GitHub REST API — uses `GITHUB_TOKEN` from Actions environment
 
 ---
 

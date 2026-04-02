@@ -1,6 +1,6 @@
 # Fissure — Development Progress
 
-## Status: Phase 1 complete
+## Status: Phase 3 complete
 
 ---
 
@@ -34,12 +34,15 @@
 - [ ] Confirm each handoff runs cleanly with `lacuna scan`
 
 ### Phase 3 — Triage agent
-- [ ] PoC search tool — GitHub code search + Exploit-DB (`agents/triage/tools/poc_search.py`)
-- [ ] ADK triage agent (`agents/triage/agent.py`)
-- [ ] `cve-triage.yml` workflow
+- [x] PoC search tool — GitHub code search + Exploit-DB (`agents/triage/tools/poc_search.py`)
+- [x] `post_triage_comment()` and `get_issue_body()` in `scripts/issues.py`
+- [x] ADK triage agent (`agents/triage/agent.py`) — `google-adk==1.28.0`, `litellm==1.82.6`; init with `LiteLlm(model=TRIAGE_MODEL)`, `GOOGLE_GENAI_USE_VERTEXAI=FALSE`
+- [x] Triage entrypoint (`scripts/triage.py`) — CLI wrapper called by workflow
+- [x] Unit tests: `tests/test_poc_search.py`, smoke test for `scripts/triage.py`
+- [x] `cve-triage.yml` workflow — trigger: `labeled` event with `candidate` label (not `opened`)
 
 ### Phase 4 — Lacuna runner
-- [ ] Handoff extraction from issue body (`scripts/extract_handoff.py`)
+- [ ] Handoff extraction from triage comment (`scripts/extract_handoff.py`) — find comment by author `github-actions[bot]`, extract first ` ```yaml ` block
 - [ ] `lacuna-runner.yml` workflow
 - [ ] Findings comment posting
 
@@ -52,4 +55,10 @@
 
 ## Notes
 
-_Add session notes here as work progresses._
+- Triage agent never edits the issue body — all output (handoff YAML, discard rationale) goes into comments. Issue body is the ingest record; comments are the agent audit trail.
+- `cve-triage.yml` trigger must be `labeled` (not `opened`) — the `candidate` label is set during issue creation but the `opened` event fires before the label is attached in the GitHub API.
+- EPSS and GHSA data are pre-fetched at ingest and present in the issue body. The triage agent reads them from context — no EPSS or GHSA tool needed on the agent.
+- Confidence is a self-reported qualitative tier (`high`/`medium`/`low`), not a numeric float. Numeric thresholds in `settings.py` are reserved for future calibration.
+- ADK init: `LiteLlm(model="anthropic/claude-3-haiku-20240307")`, env `GOOGLE_GENAI_USE_VERTEXAI=FALSE`. Versions: `google-adk==1.28.0`, `litellm==1.82.6`.
+- Lacuna YAML extraction: find comment by author `github-actions[bot]`, extract first ` ```yaml ` fenced code block via regex.
+- `get_issue_body()` added to `scripts/issues.py` (GitHub Issues glue file) rather than a dedicated module.
