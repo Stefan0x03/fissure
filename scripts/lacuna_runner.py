@@ -136,13 +136,14 @@ def post_results(
         lines.append("_No report file produced._")
         lines.append("")
 
-    if poc_paths:
-        lines.append("### PoC artifacts")
-        lines.append("")
-        for p in poc_paths:
-            lines.append(f"- `{p}`")
-    else:
-        lines.append("_No PoC files found._")
+    # TODO: verify workspace layout before enabling PoC artifact listing
+    # if poc_paths:
+    #     lines.append("### PoC artifacts")
+    #     lines.append("")
+    #     for p in poc_paths:
+    #         lines.append(f"- `{p}`")
+    # else:
+    #     lines.append("_No PoC files found._")
 
     comment = "\n".join(lines)
 
@@ -156,7 +157,7 @@ def _find_report(lacuna_dir: Path) -> tuple[str | None, str | None]:
     reports_dir = lacuna_dir / "reports"
     if not reports_dir.exists():
         return None, None
-    candidates = [p for p in reports_dir.iterdir() if p.is_file()]
+    candidates = [p for p in reports_dir.iterdir() if p.is_file() and p.suffix == ".md"]
     if not candidates:
         return None, None
     latest = max(candidates, key=lambda p: p.stat().st_mtime)
