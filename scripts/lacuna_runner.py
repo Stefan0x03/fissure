@@ -136,14 +136,13 @@ def post_results(
         lines.append("_No report file produced._")
         lines.append("")
 
-    # TODO: verify workspace layout before enabling PoC artifact listing
-    # if poc_paths:
-    #     lines.append("### PoC artifacts")
-    #     lines.append("")
-    #     for p in poc_paths:
-    #         lines.append(f"- `{p}`")
-    # else:
-    #     lines.append("_No PoC files found._")
+    if poc_paths:
+        lines.append("### PoC artifacts")
+        lines.append("")
+        for p in poc_paths:
+            lines.append(f"- `{p}`")
+    else:
+        lines.append("_No PoC files found._")
 
     comment = "\n".join(lines)
 
@@ -165,14 +164,27 @@ def _find_report(lacuna_dir: Path) -> tuple[str | None, str | None]:
 
 
 def _find_pocs(lacuna_dir: Path) -> list[str]:
-    workspace = lacuna_dir / "workspace"
-    if not workspace.exists():
+    """
+    Extract PoC file paths from *_messages.json report files by looking for
+    "poc_file" entries. Container paths (/workspace/...) are mapped to host
+    paths relative to lacuna_dir.
+    """
+    reports_dir = lacuna_dir / "reports"
+    if not reports_dir.exists():
         return []
-    return sorted(
-        str(p.relative_to(lacuna_dir))
-        for p in workspace.rglob("*")
-        if p.is_file()
-    )
+
+    poc_paths: list[str] = []
+    for report in reports_dir.iterdir():
+        if not report.is_file() or not report.name.endswith("_messages.json"):
+            continue
+        for match in re.finditer(r'"poc_file"\s*:\s*"([^"]+)"', report.read_text()):
+            # /workspace/kamailio/poc.c → lacuna_dir/workspace/kamailio/poc.c
+            container_path = match.group(1).lstrip("/")
+            host_path = lacuna_dir / container_path
+            if host_path.exists():
+                poc_paths.append(str(host_path.relative_to(lacuna_dir)))
+
+    return sorted(set(poc_paths))
 
 
 def _post_comment(issue_number: int, repo: str, body: str, *, token: str) -> None:
