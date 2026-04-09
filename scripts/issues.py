@@ -213,8 +213,66 @@ def _get_reference_urls(cve_data: dict[str, Any]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Phase 3 additions — triage comment and issue body read
+# Phase 3 additions — triage comment, issue body read, and queue listing
 # ---------------------------------------------------------------------------
+
+
+_OUTCOME_LABELS = {"approved", "needs-review", "discarded"}
+
+
+def list_untriaged_candidates(repo: str, *, token: str | None = None) -> list[int]:
+    """
+    Return issue numbers (oldest-first) that have the ``candidate`` label but
+    no outcome label (``approved``, ``needs-review``, or ``discarded``).
+
+    ``repo`` must be in ``owner/name`` format.
+    ``token`` defaults to the ``GITHUB_TOKEN`` environment variable.
+
+    Raises ``httpx.HTTPStatusError`` on non-2xx responses.
+    """
+    token = token or os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise ValueError(
+            "GitHub token required: pass token= or set GITHUB_TOKEN env var"
+        )
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    issue_numbers: list[int] = []
+    page = 1
+
+    with httpx.Client(timeout=15.0) as client:
+        while True:
+            response = client.get(
+                f"{_GITHUB_API}/repos/{repo}/issues",
+                params={
+                    "labels": LABEL_CANDIDATE,
+                    "state": "open",
+                    "direction": "asc",
+                    "per_page": 100,
+                    "page": page,
+                },
+                headers=headers,
+            )
+            response.raise_for_status()
+            items = response.json()
+            if not items:
+                break
+
+            for issue in items:
+                label_names = {lbl["name"] for lbl in issue.get("labels", [])}
+                if not label_names & _OUTCOME_LABELS:
+                    issue_numbers.append(issue["number"])
+
+            if len(items) < 100:
+                break
+            page += 1
+
+    return issue_numbers
 
 
 def get_issue_body(issue_number: int, repo: str, *, token: str | None = None) -> str:

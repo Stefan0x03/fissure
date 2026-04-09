@@ -55,7 +55,9 @@ No LLM calls in this workflow. Cost: free.
 
 ### `cve-triage.yml` (per candidate issue)
 
-Triggered when the `candidate` label is applied to an issue (not on `opened` — the label may not be set yet at that point). Also supports `workflow_dispatch` with an `issue_number` input for manual re-triage. Runs the ADK triage agent against a single issue. Responsibilities:
+Triggered three ways: (1) `workflow_run` after CVE Ingest completes — one trigger per ingest run regardless of how many issues were created; (2) daily schedule at 08:00 UTC as a safety net for stragglers if ingest partially failed; (3) `workflow_dispatch` with an optional `issue_number` — leave blank to drain the full queue, or specify a number for manual re-triage. The `issues: labeled` trigger is intentionally absent: GitHub blocks workflows triggered by `GITHUB_TOKEN` from firing other workflows, so label events from `github-actions[bot]` are invisible to Actions. A concurrency group (`triage-drain`, `cancel-in-progress: false`) prevents double-processing if `workflow_run` and `schedule` overlap.
+
+The workflow first resolves the queue (either a single issue from `workflow_dispatch` input, or all untriaged `candidate` issues without an outcome label) then processes them sequentially. Per-issue responsibilities:
 1. Fetch full EPSS score and percentile
 2. Fetch linked GitHub Security Advisory (GHSA) — often more detailed than NVD; may include patch diffs, affected version ranges, and vulnerable function names
 3. Search for public PoCs (GitHub code search, Exploit-DB)
