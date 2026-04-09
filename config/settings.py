@@ -31,7 +31,10 @@ NVD_LOOKBACK_DAYS: int = 2
 TRIAGE_MODEL: str = "claude-haiku-4-5-20251001"
 
 # Passed to `lacuna scan` at invocation.
-LACUNA_MODEL: str = "claude-sonnet-4-6"
+LACUNA_MODEL: str = "claude-haiku-4-5-20251001"
+
+# Maximum agent iterations per Lacuna scan run.
+LACUNA_MAX_ITERATIONS: int = 75
 
 # --- NVD API ---
 

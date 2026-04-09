@@ -1,0 +1,83 @@
+name: Lacuna Runner
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  run-lacuna:
+    if: github.event.label.name == 'approved'
+    name: Run Lacuna scan for issue #${{ github.event.issue.number }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Mark issue in-progress
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/labels \
+            -d '{"labels":["in-progress"]}'
+
+      - name: Extract handoff YAML from triage comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m scripts.lacuna_runner extract \
+            --issue ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --output /tmp/handoff.yaml
+
+      - name: Checkout Lacuna
+        uses: actions/checkout@v4
+        with:
+          repository: Stefan0x03/lacuna
+          path: lacuna
+          token: ${{ secrets.LACUNA_TOKEN }}
+
+      - name: Install Lacuna
+        run: pip install -e lacuna
+
+      - name: Run lacuna scan
+        id: scan
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          MODEL=$(python -c "from config.settings import LACUNA_MODEL; print(LACUNA_MODEL)")
+          ITERATIONS=$(python -c "from config.settings import LACUNA_MAX_ITERATIONS; print(LACUNA_MAX_ITERATIONS)")
+          cd lacuna
+          lacuna scan /tmp/handoff.yaml \
+            --model "$MODEL" \
+            --max-iterations "$ITERATIONS" \
+            --verbose
+        continue-on-error: true
+
+      - name: Post results and update labels
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m scripts.lacuna_runner post-results \
+            --issue ${{ github.event.issue.number }} \
+            --repo ${{ github.repository }} \
+            --lacuna-dir lacuna \
+            --scan-outcome ${{ steps.scan.outcome }}
