@@ -117,7 +117,6 @@ def post_results(
     label = "complete" if succeeded else "failed"
 
     report_text, report_name = _find_report(lacuna_dir)
-    poc_paths = _find_pocs(lacuna_dir)
 
     lines: list[str] = []
     lines.append(f"## Lacuna scan {'complete' if succeeded else 'failed'}")
@@ -131,18 +130,8 @@ def post_results(
         lines.append(report_text.strip())
         lines.append("")
         lines.append("</details>")
-        lines.append("")
     else:
         lines.append("_No report file produced._")
-        lines.append("")
-
-    if poc_paths:
-        lines.append("### PoC artifacts")
-        lines.append("")
-        for p in poc_paths:
-            lines.append(f"- `{p}`")
-    else:
-        lines.append("_No PoC files found._")
 
     comment = "\n".join(lines)
 
@@ -162,35 +151,6 @@ def _find_report(lacuna_dir: Path) -> tuple[str | None, str | None]:
     latest = max(candidates, key=lambda p: p.stat().st_mtime)
     return latest.read_text(), latest.name
 
-
-def _find_pocs(lacuna_dir: Path) -> list[str]:
-    """
-    Extract PoC filenames from *_messages.json report files by looking for
-    "poc_file" entries, then locate those files under lacuna_dir/workspace/.
-    The poc_file value is a container path (e.g. /tmp/poc2.cpp) so only the
-    basename is used to search the host workspace.
-    """
-    reports_dir = lacuna_dir / "reports"
-    workspace = lacuna_dir / "workspace"
-    if not reports_dir.exists() or not workspace.exists():
-        return []
-
-    # Collect basenames referenced in messages files.
-    poc_names: set[str] = set()
-    for report in reports_dir.iterdir():
-        if not report.is_file() or not report.name.endswith("_messages.json"):
-            continue
-        for match in re.finditer(r'"poc_file"\s*:\s*"([^"]+)"', report.read_text()):
-            poc_names.add(Path(match.group(1)).name)
-
-    # Find those files on the host under workspace/.
-    poc_paths: list[str] = []
-    for name in poc_names:
-        for host_path in workspace.rglob(name):
-            if host_path.is_file():
-                poc_paths.append(str(host_path.relative_to(lacuna_dir)))
-
-    return sorted(poc_paths)
 
 
 def _post_comment(issue_number: int, repo: str, body: str, *, token: str) -> None:
