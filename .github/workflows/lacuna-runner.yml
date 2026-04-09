@@ -57,6 +57,10 @@ jobs:
       - name: Install Lacuna
         run: pip install -e lacuna
 
+      - name: Build Lacuna sandbox image
+        run: ./scripts/build_sandbox.sh
+        working-directory: lacuna
+
       - name: Run lacuna scan
         id: scan
         env:
