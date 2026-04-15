@@ -3,6 +3,13 @@ name: Lacuna Runner
 on:
   issues:
     types: [labeled]
+  workflow_run:
+    workflows: ["CVE Triage"]
+    types: [completed]
+
+concurrency:
+  group: lacuna-drain
+  cancel-in-progress: false
 
 permissions:
   issues: write
@@ -10,7 +17,7 @@ permissions:
 
 jobs:
   run-lacuna:
-    if: github.event.label.name == 'approved'
+    if: github.event_name == 'workflow_run' || github.event.label.name == 'approved'
     name: Run Lacuna scan for issue #${{ github.event.issue.number }}
     runs-on: ubuntu-latest
 
@@ -28,6 +35,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Mark issue in-progress
+        if: github.event_name == 'issues'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -39,6 +47,7 @@ jobs:
             -d '{"labels":["in-progress"]}'
 
       - name: Extract handoff YAML from triage comment
+        if: github.event_name == 'issues'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -62,6 +71,7 @@ jobs:
         working-directory: lacuna
 
       - name: Run lacuna scan
+        if: github.event_name == 'issues'
         id: scan
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -76,7 +86,7 @@ jobs:
         continue-on-error: true
 
       - name: Post results and update labels
-        if: always()
+        if: github.event_name == 'issues'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -85,3 +95,64 @@ jobs:
             --repo ${{ github.repository }} \
             --lacuna-dir lacuna \
             --scan-outcome ${{ steps.scan.outcome }}
+
+      - name: Drain remaining approved queue
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          SKIP="${{ github.event.issue.number }}"
+          SKIP_ARG=""
+          if [ -n "$SKIP" ]; then
+            SKIP_ARG="--skip-issue $SKIP"
+          fi
+
+          QUEUE=$(python -m scripts.lacuna_runner list-queue \
+            --repo ${{ github.repository }} \
+            $SKIP_ARG)
+
+          if [ -z "$QUEUE" ]; then
+            echo "No queued approved issues found."
+            exit 0
+          fi
+
+          MODEL=$(python -c "from config.settings import LACUNA_MODEL; print(LACUNA_MODEL)")
+          ITERATIONS=$(python -c "from config.settings import LACUNA_MAX_ITERATIONS; print(LACUNA_MAX_ITERATIONS)")
+
+          for ISSUE in $QUEUE; do
+            echo "--- Draining issue #$ISSUE ---"
+
+            curl -s -X POST \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/${{ github.repository }}/issues/${ISSUE}/labels \
+              -d '{"labels":["in-progress"]}'
+
+            python -m scripts.lacuna_runner extract \
+              --issue "$ISSUE" \
+              --repo ${{ github.repository }} \
+              --output "/tmp/handoff_${ISSUE}.yaml" || {
+                echo "Extraction failed for issue #$ISSUE — marking failed and continuing."
+                python -m scripts.lacuna_runner post-results \
+                  --issue "$ISSUE" \
+                  --repo ${{ github.repository }} \
+                  --lacuna-dir lacuna \
+                  --scan-outcome failure
+                continue
+              }
+
+            cd lacuna
+            lacuna scan "/tmp/handoff_${ISSUE}.yaml" \
+              --model "$MODEL" \
+              --max-iterations "$ITERATIONS" \
+              --verbose && OUTCOME=success || OUTCOME=failure
+            cd ..
+
+            python -m scripts.lacuna_runner post-results \
+              --issue "$ISSUE" \
+              --repo ${{ github.repository }} \
+              --lacuna-dir lacuna \
+              --scan-outcome "$OUTCOME"
+          done

@@ -20,6 +20,7 @@ from pathlib import Path
 import httpx
 
 _GITHUB_API = "https://api.github.com"
+_TERMINAL_LABELS = {"in-progress", "complete", "failed", "discarded"}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -34,6 +35,56 @@ def _headers(token: str) -> dict[str, str]:
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
     }
+
+
+# ---------------------------------------------------------------------------
+# list_approved_queue
+# ---------------------------------------------------------------------------
+
+
+def list_approved_queue(repo: str, *, skip_issue: int | None = None, token: str) -> list[int]:
+    """
+    Return issue numbers (oldest-first) that have the ``approved`` label but
+    none of ``in-progress``, ``complete``, or ``failed``.
+
+    *skip_issue* is excluded from the result — pass the triggering issue number
+    to avoid re-processing it in the drain loop.
+    """
+    headers = _headers(token)
+    issue_numbers: list[int] = []
+    page = 1
+
+    with httpx.Client(timeout=15.0) as client:
+        while True:
+            resp = client.get(
+                f"{_GITHUB_API}/repos/{repo}/issues",
+                params={
+                    "labels": "approved",
+                    "state": "open",
+                    "direction": "asc",
+                    "per_page": 100,
+                    "page": page,
+                },
+                headers=headers,
+            )
+            resp.raise_for_status()
+            items = resp.json()
+            if not items:
+                break
+
+            for issue in items:
+                number = issue["number"]
+                if number == skip_issue:
+                    continue
+                label_names = {lbl["name"] for lbl in issue.get("labels", [])}
+                if not label_names & _TERMINAL_LABELS:
+                    issue_numbers.append(number)
+
+            if len(items) < 100:
+                break
+            page += 1
+
+    return issue_numbers
 
 
 # ---------------------------------------------------------------------------
@@ -191,6 +242,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Lacuna runner glue")
     sub = parser.add_subparsers(dest="command", required=True)
 
+    lq = sub.add_parser("list-queue", help="Print approved issue numbers not yet in terminal state")
+    lq.add_argument("--repo", required=True, metavar="OWNER/REPO")
+    lq.add_argument("--skip-issue", type=int, default=None, metavar="N")
+
     ex = sub.add_parser("extract", help="Extract handoff YAML from triage comment")
     ex.add_argument("--issue", type=int, required=True)
     ex.add_argument("--repo", required=True, metavar="OWNER/REPO")
@@ -213,7 +268,10 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("GITHUB_TOKEN env var is required")
         return 1
 
-    if args.command == "extract":
+    if args.command == "list-queue":
+        numbers = list_approved_queue(args.repo, skip_issue=args.skip_issue, token=token)
+        print("\n".join(str(n) for n in numbers))
+    elif args.command == "extract":
         extract(args.issue, args.repo, args.output, token=token)
     elif args.command == "post-results":
         post_results(
