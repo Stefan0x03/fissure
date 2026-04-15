@@ -176,7 +176,30 @@ Before running against novel CVEs, validate the pipeline end-to-end against:
 
 A few dollars/day during active research. Turn limit is the primary cost lever.
 
+## Future work
+
+The pipeline is functional end-to-end. The following areas are the most promising for anyone looking to dig in:
+
+**1. Triage agent prompting and confidence gates**
+The current confidence tiers (`high`/`medium`/`low`) are qualitative. After accumulating ~50+ triaged issues, a calibration pass over the labeled dataset in the issue history would let you tighten the gates and reduce false positives reaching Lacuna.
+
+**2. Post-run QA agent**
+A structured evaluator that runs after each Lacuna scan and checks whether the crash found actually matches the CVE's vulnerable function or code path — validating crash *quality*, not just occurrence. This would strengthen the research result by filtering out coincidental crashes.
+
+**3. Review run logs to refine Lacuna prompting**
+After many iterations, patterns in turn logs will surface where the agent wastes turns or goes in circles. Best addressed in the [Lacuna repo](https://github.com/Stefan0x03/lacuna).
+
+**4. Simplify Lacuna agent tooling**
+Related to #3 — tool bloat increases context size and model confusion. Audit which tools are actually used across successful runs and prune the rest. Also a [Lacuna repo](https://github.com/Stefan0x03/lacuna) concern.
+
+**5. Context culling strategy**
+Context accumulates across 75 turns (crash logs, ASAN output, tool results) and is the primary cost driver per run. The mitigation is straightforward: summarize completed turns periodically, truncate ASAN output to the relevant stack trace only, and keep full logs on disk rather than in context. High leverage, concrete to implement.
+
+**6. Funding for thorough benchmarking**
+A rigorous benchmark requires many runs across a controlled CVE sample with known PoCs. The libwebp CVE-2023-4863, libarchive, and libtiff targets are a natural starting suite. API cost at current turn budgets is roughly $1–3 per run in Sonnet — meaningful at scale.
+
+---
+
 ## Further reading
 
-- [Fissure.md](Fissure.md) — full research context, hypothesis, and paper angle
 - [config/settings.py](config/settings.py) — all tunable parameters
