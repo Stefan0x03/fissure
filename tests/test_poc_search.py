@@ -49,6 +49,21 @@ def _make_client_ctx(response: MagicMock) -> MagicMock:
     return mock_client
 
 
+def _make_edb_client_ctx(response: MagicMock) -> MagicMock:
+    """
+    Return a mock Exploit-DB client: the first get() yields the search page
+    carrying the CSRF token, the second yields *response*.
+    """
+    page = MagicMock(spec=httpx.Response)
+    page.status_code = 200
+    page.raise_for_status.return_value = None
+    page.text = '<meta name="csrf-token" content="test-csrf-token">'
+
+    mock_client = _make_client_ctx(response)
+    mock_client.get.side_effect = [page, response]
+    return mock_client
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -75,7 +90,7 @@ class TestSearchPocGitHub:
         edb_resp = _make_response(edb_body)
 
         mock_gh_client = _make_client_ctx(gh_resp)
-        mock_edb_client = _make_client_ctx(edb_resp)
+        mock_edb_client = _make_edb_client_ctx(edb_resp)
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
              patch("agents.triage.tools.poc_search.httpx.Client") as mock_cls:
@@ -100,7 +115,7 @@ class TestSearchPocGitHub:
         edb_resp = _make_response(edb_body)
 
         mock_gh_client = _make_client_ctx(gh_resp)
-        mock_edb_client = _make_client_ctx(edb_resp)
+        mock_edb_client = _make_edb_client_ctx(edb_resp)
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
              patch("agents.triage.tools.poc_search.httpx.Client") as mock_cls:
@@ -117,7 +132,7 @@ class TestSearchPocGitHub:
         edb_resp = _make_response(edb_body)
 
         mock_gh_client = _make_client_ctx(gh_resp)
-        mock_edb_client = _make_client_ctx(edb_resp)
+        mock_edb_client = _make_edb_client_ctx(edb_resp)
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
              patch("agents.triage.tools.poc_search.httpx.Client") as mock_cls:
@@ -142,7 +157,7 @@ class TestSearchPocExploitDB:
         edb_resp = _make_response(edb_body)
 
         mock_gh_client = _make_client_ctx(gh_resp)
-        mock_edb_client = _make_client_ctx(edb_resp)
+        mock_edb_client = _make_edb_client_ctx(edb_resp)
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
              patch("agents.triage.tools.poc_search.httpx.Client") as mock_cls:
@@ -163,7 +178,7 @@ class TestSearchPocExploitDB:
         edb_resp = _make_response(edb_body)
 
         mock_gh_client = _make_client_ctx(gh_resp)
-        mock_edb_client = _make_client_ctx(edb_resp)
+        mock_edb_client = _make_edb_client_ctx(edb_resp)
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
              patch("agents.triage.tools.poc_search.httpx.Client") as mock_cls:
@@ -179,7 +194,7 @@ class TestSearchPocExploitDB:
         edb_resp = _make_response({}, status_code=503)
 
         mock_gh_client = _make_client_ctx(gh_resp)
-        mock_edb_client = _make_client_ctx(edb_resp)
+        mock_edb_client = _make_edb_client_ctx(edb_resp)
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
              patch("agents.triage.tools.poc_search.httpx.Client") as mock_cls:
@@ -199,7 +214,7 @@ class TestSearchPocExploitDB:
         edb_resp.json.side_effect = ValueError("No JSON")
 
         mock_gh_client = _make_client_ctx(gh_resp)
-        mock_edb_client = _make_client_ctx(edb_resp)
+        mock_edb_client = _make_edb_client_ctx(edb_resp)
 
         with patch.dict("os.environ", {"GITHUB_TOKEN": "tok"}), \
              patch("agents.triage.tools.poc_search.httpx.Client") as mock_cls:
