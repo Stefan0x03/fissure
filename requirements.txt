@@ -3,4 +3,4 @@ pydantic>=2.0
 PyYAML>=6.0
 pytest>=8.0
 google-adk==1.28.0
-litellm==1.82.6
+litellm==1.83.10
