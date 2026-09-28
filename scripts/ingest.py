@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -34,6 +35,10 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 log = logging.getLogger(__name__)
+
+_INGEST_BOT_LOGIN = "github-actions[bot]"
+# Matches the title written by create_candidate_issue: "[Candidate] CVE-YYYY-NNNNN".
+_CANDIDATE_TITLE_RE = re.compile(r"\[Candidate\] (CVE-\d{4}-\d{4,})")
 
 
 def main(repo: str, dry_run: bool = False) -> None:
@@ -115,6 +120,10 @@ def _fetch_existing_cve_ids(repo: str, *, timeout: float = 15.0) -> set[str]:
     Paginates the Issues list API rather than the Search API so that issues
     created moments ago are immediately visible (the Search API indexes with
     a lag of several minutes).
+
+    Only issues opened by ingest itself (github-actions[bot], exact candidate
+    title) count. The repo is public, so matching any "CVE-" word in any title
+    would let anyone suppress ingestion of chosen CVEs by opening an issue.
     """
     token = os.environ.get("GITHUB_TOKEN")
     if not token:
@@ -132,7 +141,12 @@ def _fetch_existing_cve_ids(repo: str, *, timeout: float = 15.0) -> set[str]:
         while True:
             resp = client.get(
                 f"https://api.github.com/repos/{repo}/issues",
-                params={"state": "all", "per_page": 100, "page": page},
+                params={
+                    "state": "all",
+                    "creator": _INGEST_BOT_LOGIN,
+                    "per_page": 100,
+                    "page": page,
+                },
                 headers=headers,
             )
             resp.raise_for_status()
@@ -140,11 +154,15 @@ def _fetch_existing_cve_ids(repo: str, *, timeout: float = 15.0) -> set[str]:
             if not issues:
                 break
             for issue in issues:
-                title: str = issue.get("title", "")
-                # Titles are "[Candidate] CVE-YYYY-NNNNN" but match any format.
-                for word in title.split():
-                    if word.startswith("CVE-"):
-                        cve_ids.add(word)
+                # The Issues API also returns pull requests; re-check the author
+                # rather than trusting the server-side creator filter alone.
+                if "pull_request" in issue:
+                    continue
+                if issue.get("user", {}).get("login") != _INGEST_BOT_LOGIN:
+                    continue
+                match = _CANDIDATE_TITLE_RE.fullmatch(issue.get("title", ""))
+                if match:
+                    cve_ids.add(match.group(1))
             if len(issues) < 100:
                 break
             page += 1

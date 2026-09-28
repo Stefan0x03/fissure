@@ -10,7 +10,7 @@ Tests cover:
 import pytest
 from pydantic import ValidationError
 
-from schemas.handoff import FissureMetadata, HandoffYAML, SourceSpec
+from schemas.handoff import FissureMetadata, HandoffYAML, LacunaTarget, SourceSpec
 
 # ---------------------------------------------------------------------------
 # Minimal valid fixture used across multiple tests
@@ -103,13 +103,13 @@ def test_valid_language_accepted(good_lang):
     assert obj.language == good_lang
 
 
-@pytest.mark.parametrize("bad_type", ["svn", "zip", "docker", ""])
+@pytest.mark.parametrize("bad_type", ["svn", "zip", "docker", "local", ""])
 def test_invalid_source_type_raises(bad_type):
     with pytest.raises(ValidationError):
         HandoffYAML.model_validate(_valid_source(type=bad_type))
 
 
-@pytest.mark.parametrize("good_type", ["git", "tarball", "local"])
+@pytest.mark.parametrize("good_type", ["git", "tarball"])
 def test_valid_source_type_accepted(good_type):
     obj = HandoffYAML.model_validate(_valid_source(type=good_type))
     assert obj.source.type == good_type
@@ -242,3 +242,82 @@ def test_to_yaml_single_line_not_block_scalar():
     # Single-line strings should NOT use block scalar style
     assert "attack_surface_hint: |" not in serialised
     assert "build_hint: |" not in serialised
+
+
+# ---------------------------------------------------------------------------
+# Safety validators — handoffs are LLM-authored from untrusted content
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("bad_url", [
+    "file:///etc/passwd",
+    "ssh://git@github.com/example/libfoo",
+    "git@github.com:example/libfoo.git",
+    "ext::sh -c touch% /tmp/pwned",
+    "--upload-pack=touch /tmp/pwned",
+    "/home/runner/work",
+    "https://",
+    "",
+])
+def test_unsafe_source_url_raises(bad_url):
+    with pytest.raises(ValidationError):
+        HandoffYAML.model_validate(_valid_source(url=bad_url))
+
+
+@pytest.mark.parametrize("good_url", [
+    "https://github.com/example/libfoo",
+    "http://example.org/libfoo-1.2.3.tar.gz",
+])
+def test_http_source_url_accepted(good_url):
+    obj = HandoffYAML.model_validate(_valid_source(url=good_url))
+    assert obj.source.url == good_url
+
+
+def test_option_like_ref_raises():
+    with pytest.raises(ValidationError):
+        HandoffYAML.model_validate(_valid_source(ref="--upload-pack=touch /tmp/pwned"))
+
+
+@pytest.mark.parametrize("bad_name", ["../x", "..", ".hidden", "a/b", "/abs", "a b", ""])
+def test_path_like_name_raises(bad_name):
+    with pytest.raises(ValidationError):
+        HandoffYAML.model_validate(_valid(name=bad_name))
+
+
+@pytest.mark.parametrize("good_name", ["libfoo", "libjpeg-turbo", "gtk+", "zlib1.3", "Open_SSL"])
+def test_safe_name_accepted(good_name):
+    assert HandoffYAML.model_validate(_valid(name=good_name)).name == good_name
+
+
+# ---------------------------------------------------------------------------
+# LacunaTarget — block 1 of the triage comment, validated by lacuna_runner
+# ---------------------------------------------------------------------------
+
+LACUNA_BLOCK = """\
+name: libfoo
+version: 1.22
+language: c
+source:
+  type: git
+  url: https://github.com/example/libfoo
+  ref: 2.12
+description: A test target
+attack_surface_hint: Heap overflow in foo_parse()
+build_hint: make
+"""
+
+
+def test_lacuna_target_accepts_unquoted_numeric_version_and_ref():
+    obj = LacunaTarget.from_yaml(LACUNA_BLOCK)
+    assert obj.version == "1.22"
+    assert obj.source.ref == "2.12"
+
+
+def test_lacuna_target_does_not_require_fissure_metadata():
+    assert "fissure" not in LacunaTarget.from_yaml(LACUNA_BLOCK).model_dump()
+
+
+def test_lacuna_target_rejects_metadata_only_block():
+    block = "fissure:\n  cve_id: CVE-2024-99999\n  schema_version: '1'\n"
+    with pytest.raises(ValidationError):
+        LacunaTarget.from_yaml(block)

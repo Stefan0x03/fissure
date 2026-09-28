@@ -18,6 +18,10 @@ import sys
 from pathlib import Path
 
 import httpx
+import yaml
+from pydantic import ValidationError
+
+from schemas.handoff import LacunaTarget
 
 _GITHUB_API = "https://api.github.com"
 _TERMINAL_LABELS = {"in-progress", "complete", "failed", "discarded"}
@@ -96,6 +100,10 @@ def extract(issue_number: int, repo: str, output: Path, *, token: str) -> None:
     """
     Find the triage comment by github-actions[bot] and write the first
     ```yaml block to *output*.
+
+    The block is validated against LacunaTarget before it is written: it is
+    LLM-authored from untrusted content, so an invalid or unsafe spec (e.g. a
+    non-http URL or a path-like name) must never reach ``lacuna scan``.
     """
     comments = _list_comments(issue_number, repo, token=token)
 
@@ -111,6 +119,12 @@ def extract(issue_number: int, repo: str, output: Path, *, token: str) -> None:
     yaml_block = _first_yaml_block(body)
     if yaml_block is None:
         logger.error("No ```yaml block found in triage comment on issue #%d", issue_number)
+        sys.exit(1)
+
+    try:
+        LacunaTarget.from_yaml(yaml_block)
+    except (yaml.YAMLError, ValidationError) as exc:
+        logger.error("Handoff YAML on issue #%d failed validation: %s", issue_number, exc)
         sys.exit(1)
 
     output.parent.mkdir(parents=True, exist_ok=True)

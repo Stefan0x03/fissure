@@ -148,7 +148,7 @@ name: <library-name>
 version: <affected-version>
 language: <c|cpp>
 source:
-  type: <git|tarball|local>
+  type: <git|tarball>
   url: <url confirmed via fetch_url — never fabricated>
   ref: <tag, commit, or version string>
 description: <one-line description>

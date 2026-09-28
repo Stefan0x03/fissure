@@ -6,17 +6,41 @@ Lacuna consumes all top-level fields; the nested `fissure:` block is
 Fissure-only metadata used for research tracking and confidence calibration.
 """
 
+import re
 from typing import Literal, Optional
+from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+# Lacuna uses `name` as a directory under its workspace (and rmtree()s it), so
+# it must be a single safe path component.
+_SAFE_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*")
 
 
 class SourceSpec(BaseModel):
-    # "local" is for development/testing against a pre-checked-out tree.
-    type: Literal["git", "tarball", "local"]
+    # "local" is intentionally absent: handoffs are LLM-authored from untrusted
+    # content and must never point Lacuna at a path on the runner host.
+    type: Literal["git", "tarball"]
     url: str
     ref: str
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_http(cls, v: str) -> str:
+        # Rules out file://, ssh, git ext:: transports, and "-"-prefixed values
+        # that git would parse as options.
+        parsed = urlparse(v)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("source.url must be an http(s) URL")
+        return v
+
+    @field_validator("ref")
+    @classmethod
+    def _ref_not_option(cls, v: str) -> str:
+        if v.startswith("-"):
+            raise ValueError("source.ref must not start with '-'")
+        return v
 
 
 class FissureMetadata(BaseModel):
@@ -31,7 +55,9 @@ class FissureMetadata(BaseModel):
     schema_version: Literal["1"]
 
 
-class HandoffYAML(BaseModel):
+class LacunaTarget(BaseModel):
+    """Block 1 of the triage comment: the Lacuna target spec on its own."""
+
     name: str
     version: str
     # Additional languages (Rust, Go, …) are tracked as feature requests
@@ -41,6 +67,27 @@ class HandoffYAML(BaseModel):
     description: str
     attack_surface_hint: str
     build_hint: str
+
+    @field_validator("name")
+    @classmethod
+    def _name_is_path_safe(cls, v: str) -> str:
+        if not _SAFE_NAME_RE.fullmatch(v):
+            raise ValueError("name must be a single path component: [A-Za-z0-9._+-], no leading dot")
+        return v
+
+    @classmethod
+    def from_yaml(cls, text: str) -> "LacunaTarget":
+        """
+        Parse a raw YAML string into a LacunaTarget instance.
+
+        Every target-spec field is a string, so scalars are loaded as strings
+        (BaseLoader): an unquoted ``version: 1.22`` must validate, not be
+        rejected as a float.
+        """
+        return cls.model_validate(yaml.load(text, Loader=yaml.BaseLoader))
+
+
+class HandoffYAML(LacunaTarget):
     fissure: FissureMetadata
 
     @classmethod

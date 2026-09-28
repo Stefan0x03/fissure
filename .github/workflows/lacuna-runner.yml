@@ -20,6 +20,7 @@ jobs:
     if: github.event_name == 'workflow_run' || github.event.label.name == 'approved'
     name: Run Lacuna scan for issue #${{ github.event.issue.number }}
     runs-on: ubuntu-latest
+    timeout-minutes: 180
 
     steps:
       - name: Checkout
@@ -48,6 +49,8 @@ jobs:
 
       - name: Extract handoff YAML from triage comment
         if: github.event_name == 'issues'
+        id: extract
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -71,7 +74,7 @@ jobs:
         working-directory: lacuna
 
       - name: Run lacuna scan
-        if: github.event_name == 'issues'
+        if: github.event_name == 'issues' && steps.extract.outcome == 'success'
         id: scan
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -79,7 +82,8 @@ jobs:
           MODEL=$(python -c "from config.settings import LACUNA_MODEL; print(LACUNA_MODEL)")
           ITERATIONS=$(python -c "from config.settings import LACUNA_MAX_ITERATIONS; print(LACUNA_MAX_ITERATIONS)")
           cd lacuna
-          lacuna scan /tmp/handoff.yaml \
+          # Per-scan cap so one stuck scan can't consume the whole job budget.
+          timeout 60m lacuna scan /tmp/handoff.yaml \
             --model "$MODEL" \
             --max-iterations "$ITERATIONS" \
             --verbose
@@ -94,7 +98,7 @@ jobs:
             --issue ${{ github.event.issue.number }} \
             --repo ${{ github.repository }} \
             --lacuna-dir lacuna \
-            --scan-outcome ${{ steps.scan.outcome }}
+            --scan-outcome ${{ steps.extract.outcome == 'success' && steps.scan.outcome || 'failure' }}
 
       - name: Drain remaining approved queue
         if: always()
@@ -144,7 +148,7 @@ jobs:
               }
 
             cd lacuna
-            lacuna scan "/tmp/handoff_${ISSUE}.yaml" \
+            timeout 60m lacuna scan "/tmp/handoff_${ISSUE}.yaml" \
               --model "$MODEL" \
               --max-iterations "$ITERATIONS" \
               --verbose && OUTCOME=success || OUTCOME=failure
