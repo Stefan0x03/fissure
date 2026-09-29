@@ -36,6 +36,13 @@ LACUNA_MODEL: str = "claude-haiku-4-5-20251001"
 # Maximum agent iterations per Lacuna scan run.
 LACUNA_MAX_ITERATIONS: int = 75
 
+# Immutable commit SHA for Stefan0x03/lacuna checkout. SECURITY: This pin prevents
+# supply-chain attacks via mutable branch references. The checked-out code is installed
+# in editable mode and executed with ANTHROPIC_API_KEY and GITHUB_TOKEN in scope.
+# To update: (1) audit Stefan0x03/lacuna at the target ref, (2) verify no malicious
+# code in setup.py, build scripts, or CLI entry points, (3) update this SHA.
+LACUNA_COMMIT_SHA: str = "REPLACE_WITH_AUDITED_COMMIT_SHA"
+
 # --- NVD API ---
 
 NVD_BASE_URL: str = "https://services.nvd.nist.gov/rest/json/cves/2.0"

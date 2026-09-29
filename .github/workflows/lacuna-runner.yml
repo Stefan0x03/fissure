@@ -59,10 +59,22 @@ jobs:
             --repo ${{ github.repository }} \
             --output /tmp/handoff.yaml
 
+      - name: Read Lacuna commit SHA from config
+        id: lacuna-ref
+        run: |
+          LACUNA_REF=$(python -c "from config.settings import LACUNA_COMMIT_SHA; print(LACUNA_COMMIT_SHA)")
+          echo "LACUNA_REF=$LACUNA_REF" >> $GITHUB_ENV
+
       - name: Checkout Lacuna
         uses: actions/checkout@v4
         with:
           repository: Stefan0x03/lacuna
+          # SECURITY: Pin to immutable commit SHA to prevent supply-chain attacks.
+          # This checkout is installed in editable mode and executed with ANTHROPIC_API_KEY
+          # and GITHUB_TOKEN in scope. The SHA is configured in config/settings.py as
+          # LACUNA_COMMIT_SHA. To update: audit the target commit, verify no malicious
+          # code in setup.py, build scripts, or CLI entry points, then update the SHA.
+          ref: ${{ env.LACUNA_REF }}
           path: lacuna
           token: ${{ secrets.LACUNA_TOKEN }}
 
