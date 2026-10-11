@@ -32,11 +32,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--issue",
-        type=int,
+        type=str,  # Accept string first, validate as int after filtering empty
         required=False,
-        default=None,
+        default=os.environ.get("ISSUE_NUMBER", "").strip() or None,
         metavar="NUMBER",
-        help="GitHub issue number to triage (omit to drain the full candidate queue)",
+        help="GitHub issue number to triage (omit to drain the full candidate queue; can also set ISSUE_NUMBER env var)",
     )
     parser.add_argument(
         "--repo",
@@ -44,7 +44,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="OWNER/REPO",
         help="Repository in owner/repo format (default: $GITHUB_REPOSITORY)",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+
+    # Validate and convert issue number: reject empty strings, convert to int
+    if args.issue is not None:
+        args.issue = args.issue.strip()
+        if not args.issue:
+            args.issue = None
+        else:
+            try:
+                args.issue = int(args.issue)
+            except ValueError:
+                parser.error(f"--issue must be an integer, got: {args.issue!r}")
+
+    return args
 
 
 def _triage_single(issue_number: int, repo: str) -> None:
