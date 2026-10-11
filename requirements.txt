@@ -1,3 +1,20 @@
+# Fissure Python dependencies
+#
+# This file specifies direct dependencies with minimum version constraints.
+# It is the source of truth for human-readable dependency declarations.
+#
+# SECURITY: GitHub Actions workflows do NOT install from this file directly.
+# They use requirements-lock.txt, which pins all direct and transitive dependencies
+# to exact versions with SHA256 hashes. This mitigates supply-chain attacks where
+# a compromised package could execute code during installation or import and
+# exfiltrate credentials (GITHUB_TOKEN, ANTHROPIC_API_KEY, etc.).
+#
+# After changing this file, regenerate the lock file:
+#   pip install pip-tools
+#   pip-compile --generate-hashes --allow-unsafe --output-file requirements-lock.txt requirements.txt
+#
+# Then audit the diff and commit both files together.
+
 httpx>=0.27
 pydantic>=2.12,<3
 PyYAML>=6.0

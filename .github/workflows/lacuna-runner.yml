@@ -33,7 +33,14 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          # SECURITY: Use --require-hashes to enforce integrity verification of all packages
+          # (direct and transitive). This mitigates supply-chain attacks where a compromised
+          # package could execute code during installation or import and exfiltrate the
+          # GITHUB_TOKEN, ANTHROPIC_API_KEY, LACUNA_TOKEN, or other credentials exposed in
+          # later steps. The lock file (requirements-lock.txt) must be regenerated with
+          # pip-compile --generate-hashes whenever requirements.txt changes.
+          pip install --require-hashes -r requirements-lock.txt
 
       - name: Mark issue in-progress
         if: github.event_name == 'issues'
@@ -90,7 +97,14 @@ jobs:
           token: ${{ secrets.LACUNA_TOKEN }}
 
       - name: Install Lacuna
-        run: pip install -e lacuna
+        run: |
+          # SECURITY: Installing from the pinned checkout (ref validated as 40-char SHA above).
+          # Lacuna's own dependencies are resolved at install time. The commit SHA pin ensures
+          # the setup.py and dependency declarations are immutable, but transitive dependencies
+          # are still resolved from PyPI. The LACUNA_COMMIT_SHA audit (step above) must include
+          # reviewing Lacuna's requirements for overly broad version ranges or known-vulnerable
+          # packages. Consider: if Lacuna gains a requirements-lock.txt, use --require-hashes here.
+          pip install -e lacuna
 
       - name: Build Lacuna sandbox image
         run: ./scripts/build_sandbox.sh
