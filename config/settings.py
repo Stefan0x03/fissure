@@ -39,8 +39,15 @@ LACUNA_MAX_ITERATIONS: int = 75
 # Immutable commit SHA for Stefan0x03/lacuna checkout. SECURITY: This pin prevents
 # supply-chain attacks via mutable branch references. The checked-out code is installed
 # in editable mode and executed with ANTHROPIC_API_KEY and GITHUB_TOKEN in scope.
-# To update: (1) audit Stefan0x03/lacuna at the target ref, (2) verify no malicious
-# code in setup.py, build scripts, or CLI entry points, (3) update this SHA.
+#
+# REQUIRED: Must be a 40-character git commit SHA (lowercase hex). The workflow will
+# fail if this is not set to a valid SHA.
+#
+# To set: (1) identify your target commit in Stefan0x03/lacuna, (2) audit that commit
+# for malicious code in setup.py, pyproject.toml, build scripts, and CLI entry points,
+# (3) set this value to the full 40-character commit SHA.
+#
+# Example: LACUNA_COMMIT_SHA: str = "a1b2c3d4e5f6789012345678901234567890abcd"
 LACUNA_COMMIT_SHA: str = "REPLACE_WITH_AUDITED_COMMIT_SHA"
 
 # --- NVD API ---
