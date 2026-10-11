@@ -3,6 +3,6 @@ pydantic>=2.12,<3
 PyYAML>=6.0
 pytest>=9.0.3
 google-adk==2.10.0
-litellm==1.102.0
+litellm==1.102.2
 # Transitive (via litellm); floor for AIKIDO-2026-10636 (EncodingVisualizer XSS, fixed in 0.23.1)
 tokenizers>=0.23.1,<1.0
