@@ -63,6 +63,17 @@ jobs:
         id: lacuna-ref
         run: |
           LACUNA_REF=$(python -c "from config.settings import LACUNA_COMMIT_SHA; print(LACUNA_COMMIT_SHA)")
+          
+          # SECURITY: Validate that LACUNA_COMMIT_SHA is a 40-character hex string (git SHA).
+          # This prevents supply-chain attacks via mutable branch references or placeholder values.
+          if ! echo "$LACUNA_REF" | grep -qE '^[0-9a-fA-F]{40}$'; then
+            echo "::error::LACUNA_COMMIT_SHA in config/settings.py must be a 40-character commit SHA."
+            echo "::error::Current value: $LACUNA_REF"
+            echo "::error::To fix: audit Stefan0x03/lacuna at your target commit, verify no malicious"
+            echo "::error::code in setup.py, build scripts, or CLI entry points, then set the SHA."
+            exit 1
+          fi
+          
           echo "LACUNA_REF=$LACUNA_REF" >> $GITHUB_ENV
 
       - name: Checkout Lacuna
